@@ -165,6 +165,17 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4 mb-6 pt-4 border-t border-white/5">
+            <div className="flex flex-col items-center p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
+              <span className="text-xl font-bold text-blue-400">{(stats as any)?.activeUsers ?? 0}</span>
+              <span className="text-[9px] uppercase font-bold text-zinc-500">Actifs</span>
+            </div>
+            <div className="flex flex-col items-center p-3 rounded-xl bg-purple-500/5 border border-purple-500/10">
+              <span className="text-xl font-bold text-purple-400">{(stats as any)?.waitingInQueue ?? 0}</span>
+              <span className="text-[9px] uppercase font-bold text-zinc-500">En File</span>
+            </div>
+          </div>
+
           {isAdmin && (
             <div className="flex gap-2 items-center pt-4 border-t border-white/5 animate-in slide-in-from-bottom-2 duration-300">
               <div className="relative flex-1">

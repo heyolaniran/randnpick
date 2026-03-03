@@ -4,15 +4,24 @@ export class QueueManager {
     private static instance: QueueManager;
     private availableNumbers: number[] = [];
     private assignedNumbers: Map<string, number> = new Map();
-    private maxNumber: number = 100; // Default max
+    private maxNumber: number = 100;
     private isProcessing: boolean = false;
-    private queue: Array<() => void> = [];
+    private queue: Array<{ userId: string, resolve: (val: any) => void, action: () => Promise<any> }> = [];
+    private activeConnections: number = 0;
 
     private constructor() {
         this.reset(100);
     }
 
     public static getInstance(): QueueManager {
+        // Handle Next.js hot reloading by attaching to global
+        if (process.env.NODE_ENV === 'development') {
+            if (!(global as any).queueManagerInstance) {
+                (global as any).queueManagerInstance = new QueueManager();
+            }
+            return (global as any).queueManagerInstance;
+        }
+
         if (!QueueManager.instance) {
             QueueManager.instance = new QueueManager();
         }
@@ -30,41 +39,44 @@ export class QueueManager {
         }
     }
 
-    public async pickNumber(userId: string, userIp: string): Promise<{ success: boolean; number?: number; error?: string }> {
-        // We create a combined tracking set to prevent same IP or same ID picking twice
-        const alreadyAssigned = Array.from(this.assignedNumbers.entries()).find(
-            ([id, num]) => id === userId || id === `ip_${userIp}`
+    public async pickNumber(userId: string, userIp: string): Promise<{ success: boolean; number?: number; error?: string; queuePos?: number }> {
+        // Double Check: ID unique ou IP déjà enregistrée
+        const existingEntry = Array.from(this.assignedNumbers.entries()).find(
+            ([key, _]) => key === userId || key === `ip_${userIp}`
         );
 
-        if (alreadyAssigned) {
-            return { success: true, number: alreadyAssigned[1] };
+        if (existingEntry) {
+            return { success: true, number: existingEntry[1] };
         }
 
         return new Promise((resolve) => {
-            this.queue.push(async () => {
-                try {
-                    // Re-check inside the queue for both ID and IP
-                    const reCheck = Array.from(this.assignedNumbers.entries()).find(
-                        ([id, num]) => id === userId || id === `ip_${userIp}`
-                    );
+            const queuePos = this.queue.length + 1;
 
-                    if (reCheck) {
-                        resolve({ success: true, number: reCheck[1] });
-                    } else if (this.availableNumbers.length === 0) {
-                        resolve({ success: false, error: "Plus de numéros disponibles" });
-                    } else {
-                        // Simulate a small delay for "queue" effect/processing
-                        await new Promise(r => setTimeout(r, 800));
+            this.queue.push({
+                userId,
+                resolve,
+                action: async () => {
+                    this.activeConnections++;
+                    try {
+                        // Re-vérification après attente dans la file
+                        const reCheck = Array.from(this.assignedNumbers.entries()).find(
+                            ([k, _]) => k === userId || k === `ip_${userIp}`
+                        );
+
+                        if (reCheck) return { success: true, number: reCheck[1] };
+                        if (this.availableNumbers.length === 0) return { success: false, error: "Plus de numéros disponibles" };
+
+                        // Simulation de traitement (file d'attente visible)
+                        await new Promise(r => setTimeout(r, 1500));
+
                         const picked = this.availableNumbers.pop();
-
-                        // Store both to block both identifiers
                         this.assignedNumbers.set(userId, picked!);
                         this.assignedNumbers.set(`ip_${userIp}`, picked!);
 
-                        resolve({ success: true, number: picked });
+                        return { success: true, number: picked };
+                    } finally {
+                        this.activeConnections--;
                     }
-                } finally {
-                    this.processNext();
                 }
             });
 
@@ -74,11 +86,15 @@ export class QueueManager {
         });
     }
 
-    private processNext() {
+    private async processNext() {
         if (this.queue.length > 0) {
             this.isProcessing = true;
-            const nextTask = this.queue.shift();
-            if (nextTask) nextTask();
+            const task = this.queue.shift();
+            if (task) {
+                const result = await task.action();
+                task.resolve(result);
+                this.processNext();
+            }
         } else {
             this.isProcessing = false;
         }
@@ -87,7 +103,9 @@ export class QueueManager {
     public getStats() {
         return {
             remaining: this.availableNumbers.length,
-            assigned: this.assignedNumbers.size,
+            assigned: Array.from(this.assignedNumbers.keys()).filter(k => !k.startsWith('ip_')).length,
+            activeUsers: this.activeConnections,
+            waitingInQueue: this.queue.length,
             max: this.maxNumber
         };
     }
