@@ -39,14 +39,10 @@ export class QueueManager {
         }
     }
 
-    public async pickNumber(userId: string, userIp: string): Promise<{ success: boolean; number?: number; error?: string; queuePos?: number }> {
-        // Double Check: ID unique ou IP déjà enregistrée
-        const existingEntry = Array.from(this.assignedNumbers.entries()).find(
-            ([key, _]) => key === userId || key === `ip_${userIp}`
-        );
-
-        if (existingEntry) {
-            return { success: true, number: existingEntry[1] };
+    public async pickNumber(userId: string): Promise<{ success: boolean; number?: number; error?: string; queuePos?: number }> {
+        // Double Check: ID unique uniquement
+        if (this.assignedNumbers.has(userId)) {
+            return { success: true, number: this.assignedNumbers.get(userId) };
         }
 
         return new Promise((resolve) => {
@@ -59,11 +55,10 @@ export class QueueManager {
                     this.activeConnections++;
                     try {
                         // Re-vérification après attente dans la file
-                        const reCheck = Array.from(this.assignedNumbers.entries()).find(
-                            ([k, _]) => k === userId || k === `ip_${userIp}`
-                        );
+                        if (this.assignedNumbers.has(userId)) {
+                            return { success: true, number: this.assignedNumbers.get(userId) };
+                        }
 
-                        if (reCheck) return { success: true, number: reCheck[1] };
                         if (this.availableNumbers.length === 0) return { success: false, error: "Plus de numéros disponibles" };
 
                         // Simulation de traitement (file d'attente visible)
@@ -71,7 +66,6 @@ export class QueueManager {
 
                         const picked = this.availableNumbers.pop();
                         this.assignedNumbers.set(userId, picked!);
-                        this.assignedNumbers.set(`ip_${userIp}`, picked!);
 
                         return { success: true, number: picked };
                     } finally {
@@ -103,7 +97,7 @@ export class QueueManager {
     public getStats() {
         return {
             remaining: this.availableNumbers.length,
-            assigned: Array.from(this.assignedNumbers.keys()).filter(k => !k.startsWith('ip_')).length,
+            assigned: this.assignedNumbers.size,
             activeUsers: this.activeConnections,
             waitingInQueue: this.queue.length,
             max: this.maxNumber

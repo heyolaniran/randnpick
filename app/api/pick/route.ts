@@ -8,11 +8,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "L'identifiant utilisateur est requis" }, { status: 400 });
         }
 
-        const forwarded = req.headers.get('x-forwarded-for');
-        const ip = forwarded ? forwarded.split(',')[0] : '127.0.0.1';
-
         const qm = QueueManager.getInstance();
-        const result = await qm.pickNumber(userId, ip);
+        const result = await qm.pickNumber(userId);
 
         if (result.success) {
             return NextResponse.json(result);
