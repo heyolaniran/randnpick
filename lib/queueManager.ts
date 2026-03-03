@@ -30,24 +30,37 @@ export class QueueManager {
         }
     }
 
-    public async pickNumber(userId: string): Promise<{ success: boolean; number?: number; error?: string }> {
-        // Basic queue/lock implementation to ensure sequential processing
-        if (this.assignedNumbers.has(userId)) {
-            return { success: true, number: this.assignedNumbers.get(userId) };
+    public async pickNumber(userId: string, userIp: string): Promise<{ success: boolean; number?: number; error?: string }> {
+        // We create a combined tracking set to prevent same IP or same ID picking twice
+        const alreadyAssigned = Array.from(this.assignedNumbers.entries()).find(
+            ([id, num]) => id === userId || id === `ip_${userIp}`
+        );
+
+        if (alreadyAssigned) {
+            return { success: true, number: alreadyAssigned[1] };
         }
 
         return new Promise((resolve) => {
             this.queue.push(async () => {
                 try {
-                    if (this.assignedNumbers.has(userId)) {
-                        resolve({ success: true, number: this.assignedNumbers.get(userId) });
+                    // Re-check inside the queue for both ID and IP
+                    const reCheck = Array.from(this.assignedNumbers.entries()).find(
+                        ([id, num]) => id === userId || id === `ip_${userIp}`
+                    );
+
+                    if (reCheck) {
+                        resolve({ success: true, number: reCheck[1] });
                     } else if (this.availableNumbers.length === 0) {
                         resolve({ success: false, error: "Plus de numéros disponibles" });
                     } else {
                         // Simulate a small delay for "queue" effect/processing
                         await new Promise(r => setTimeout(r, 800));
                         const picked = this.availableNumbers.pop();
+
+                        // Store both to block both identifiers
                         this.assignedNumbers.set(userId, picked!);
+                        this.assignedNumbers.set(`ip_${userIp}`, picked!);
+
                         resolve({ success: true, number: picked });
                     }
                 } finally {
